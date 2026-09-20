@@ -6108,7 +6108,8 @@ c     change to intercept form of fourier series.
       END
 C
 C
-      subroutine model_hmF2(day,month,UT,xmodip,long,F107_81,hmF2)
+      subroutine model_hmF2(day,month,UT,xmodip,long,F107_81,hmF2,
+     & direct)
 c--------------------------------------------------------------------------
 c  Input:
 c    day, month (integer)
@@ -6122,6 +6123,7 @@ c Output:
 c    hmF2       (real) - F2-layer peak height in km
 c--------------------------------------------------------------------------
 	implicit none
+      character(*) direct
 c     .. scalar arguments ..
       integer day, month
       real UT, xmodip, long, F107_81, hmF2
@@ -6129,7 +6131,7 @@ c     .. local scalars ..
       integer monthr, montha
 	real hmF2_0, hmF2_m, hmF2_p, hmF2med
 c     ..
-	call SDMF2(UT,month,F107_81,xmodip,long,hmF2_0)
+	call SDMF2(UT,month,F107_81,xmodip,long,hmF2_0,direct)
 
       if (day.le.15) then
          if (day.eq.15) then
@@ -6137,12 +6139,12 @@ c     ..
          else
              monthr = month-1
              if (monthr.eq.0) monthr = 12
-	       call SDMF2(UT,monthr,F107_81,xmodip,long,hmF2_m)
+	       call SDMF2(UT,monthr,F107_81,xmodip,long,hmF2_m,direct)
              hmF2med = (hmF2_0-(day-15)*(hmF2_m-hmF2_0)/30.)
          end if
       else
          montha = mod(month,12) + 1
-	   call SDMF2(UT,montha,F107_81,xmodip,long,hmF2_p)
+	   call SDMF2(UT,montha,F107_81,xmodip,long,hmF2_p,direct)
          hmF2med  = (hmF2_0+(day-15)*(hmF2_p-hmF2_0)/30.)
       end if
       hmF2 = hmF2med
@@ -6150,7 +6152,7 @@ c     ..
       end
 C
 C
-      subroutine SDMF2(UT,monthut,F107A,xmodip,long,hmF2)
+      subroutine SDMF2(UT,monthut,F107A,xmodip,long,hmF2,direct)
 c--------------------------------------------------------------------------
 c    Global median model of the F2-layer peak height
 c
@@ -6183,6 +6185,7 @@ c  Output:
 c    hmF2  - F2-layer peak height in km (real)
 c--------------------------------------------------------------------------
       implicit none
+      character(*) direct
 c     .. scalar arguments ..
       integer monthut
       real F107A
@@ -6201,7 +6204,8 @@ c     .. function references .
 c
       hmF2_UT = 0.0
 	  do i=0,23
-         hmF2_UT(i) = hmF2_med_SD(i,monthut,F107A,xmodip,long)
+         hmF2_UT(i) = hmF2_med_SD(i,monthut,F107A,xmodip,long,
+     &   direct)
 	     xUT(i) = dble(i)
          end do
 c 
@@ -6212,7 +6216,8 @@ c
       end
 c
 c
-      real function hmF2_med_SD(iUT,monthut,F107A,xmodip,long)
+      real function hmF2_med_SD(iUT,monthut,F107A,xmodip,long,
+     & direct)
 c---------------------------------------------------------------------
 c    Input: 
 c      iUT     - universal time (real)
@@ -6227,6 +6232,7 @@ c    activity used the following auxiliary subroutines and functions:
 c    read_data_SD, fun_hmF2_SD
 c---------------------------------------------------------------------
       implicit none
+      character(*) direct
 c	..   scalar arguments ..
       integer monthut, iUT
       real F107A
@@ -6263,7 +6269,7 @@ c
 	umr=atan(1.0)*4./180
       teta = 90.0-xmodip
 c
-      call read_data_SD(monthut,coeff_month)
+      call read_data_SD(monthut,coeff_month,direct)
       Kf = coeff_month(0:148,iUT)
 	hmF2_1 = fun_hmF2_SD(teta,long,Kf)
       Kf = coeff_month(0:148,iUT+24)
@@ -6281,20 +6287,21 @@ c
       end
 c
 c
-      subroutine read_data_SD(month,coeff_month)
+      subroutine read_data_SD(month,coeff_month,direct)
 c------------------------------------------------------------------
 c    subroutine to read arrays mcsat11.datÖ mcsat22.dat
 c    with coefficients of hmF2 spatial decomposition
 c    for 12 month, 24 UT hour and two solar activity levels
 c------------------------------------------------------------------
 	implicit none
+      character(*) direct
 c     .. scalar arguments ..
 	integer month
 c     .. array arguments ..
 	double precision coeff_month(0:148,0:47)
 c     .. local scalars ..
 	integer coeff_month_read(1:12)
-	character(256) filedata
+	character(256) filedata,filepath
 	integer i, j
 c     .. local arrays ..
 	double precision coeff_month_all(0:148,0:47,1:12)
@@ -6303,7 +6310,8 @@ c     .. local arrays ..
 c
       if (coeff_month_read(month) .eq. 0) then
         write(filedata, 10) month+10
-        open(15, File=filedata, status='old')
+        call dfp(direct,filedata,filepath)
+        open(15, File=filepath, status='old')
 	  do j=0,47
 	    read(15,20) (coeff_month_all(i,j,month),i=0,148)
         end do
@@ -9109,7 +9117,7 @@ C
             END
 c
 c
-           subroutine read_ig_rz 
+           subroutine read_ig_rz(direct)
 c----------------------------------------------------------------
 c Reads the Rz12 and IG12 indices file IG_RZ.DAT from I/O UNIT=12 
 c and stores IG12 in aig(1600) and Rz12 in arz(1600). They are
@@ -9151,10 +9159,12 @@ c----------------------------------------------------------------
 
            integer	iyst,iyend,iymst,iupd,iupm,iupy,imst,imend
            real		aig(1600),arz(1600)
-           
-           common /igrz/aig,arz,iymst,iymend
+           character(*) direct
 
-           open(unit=12,file='ig_rz.dat',FORM='FORMATTED',status='old')
+           common /igrz/aig,arz,iymst,iymend
+           character*256 filepath
+           call dfp(direct,'ig_rz.dat', filepath)
+           open(unit=12,file=filepath,FORM='FORMATTED',status='old')
 
 c-web- special for web version
 c            open(unit=12,file=
@@ -9298,7 +9308,7 @@ c               if((yr/4*4.eq.yr).and.(yr/100*100.ne.yr)) idd2=381
             end
 C
 C
-		subroutine readapf107
+		subroutine readapf107(direct)
 C-------------------------------------------------------------------------
 c Reads APF107.DAT file (on UNIT=13) and stores contents in COMMON block:
 C   COMMON/AAP,AF107,N/ with  AAP(27000,9) and AF107(27000,3)
@@ -9330,11 +9340,13 @@ c
 c If date is outside the range of the Ap indices file then IAP(1)=-5  
 C-------------------------------------------------------------------------
 C
+        CHARACTER(*)    direct
         INTEGER		aap(27000,9),iiap(8)
         DIMENSION 	af107(27000,3)
         COMMON		/apfa/aap,af107,n
-
-        Open(13,FILE='apf107.dat',FORM='FORMATTED',STATUS='OLD')
+        character*256   filepath
+        call dfp(direct,'apf107.dat', filepath)
+        Open(13,FILE=filepath,FORM='FORMATTED',STATUS='OLD')
 c-web-sepcial vfor web version
 c      OPEN(13,FILE='/var/www/omniweb/cgi/vitmo/IRI/apf107.dat',
 c     *    FORM='FORMATTED',STATUS='OLD')
@@ -25594,7 +25606,7 @@ C -------------------------------------------------------------------
       END
 C
 C
-      SUBROUTINE IBPLOD
+      SUBROUTINE IBPLOD(DIRECT)
 C --------------------------------------------------------------
 C     Read empirical IBP coefficients from formatted ASCII file.
 C
@@ -25618,8 +25630,10 @@ C     ROW i corresponds to the longitude bin i,
 C     where i=1 means -180 deg and i=360 means +179 deg.
 C --------------------------------------------------------------
       IMPLICIT NONE
+      CHARACTER(*) DIRECT
       INTEGER IU,IOS,I,M,N1,N2,IDX
       CHARACTER*64 KEY,TXT
+      CHARACTER*256 FILPAT
       DOUBLE PRECISION PAR(5),GCF(5),SHC(5,12)
       DOUBLE PRECISION DNS(360,12)
 
@@ -25627,7 +25641,8 @@ C --------------------------------------------------------------
 C
       IU=16
 C
-      OPEN(UNIT=IU,FILE='ibp_emp_coeffs.dat',STATUS='OLD',
+      CALL DFP(DIRECT,'ibp_emp_coeffs.dat',FILPAT)
+      OPEN(UNIT=IU,FILE=FILPAT,STATUS='OLD',
      &FORM='FORMATTED',IOSTAT=IOS)
 C
       READ(IU,*,IOSTAT=IOS)KEY,TXT

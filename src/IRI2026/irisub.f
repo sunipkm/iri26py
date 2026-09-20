@@ -299,7 +299,7 @@ C*****************************************************************
 C
 C
        SUBROUTINE IRI_SUB(JF,JMAG,ALATI,ALONG,IYYYY,MMDD,DHOUR,
-     &    HEIBEG,HEIEND,HEISTP,OUTF,OARR)
+     & ZKM,NZKM,OUTF,OARR,DIRECT,LOGFILE)
 C-----------------------------------------------------------------
 C
 C INPUT:  JF(1:50)      true/false switches for several options
@@ -309,8 +309,7 @@ C         IYYYY         Year as YYYY, e.g. 1985
 C         MMDD (-DDD)   DATE (OR DAY OF YEAR AS A NEGATIVE NUMBER)
 C         DHOUR         LOCAL TIME (OR UNIVERSAL TIME + 25) IN DECIMAL 
 C                          HOURS
-C         HEIBEG,       HEIGHT RANGE IN KM; maximal 100 heights, i.e.
-C          HEIEND,HEISTP        int((heiend-heibeg)/heistp)+1.le.100
+C         ZKM,NZKM      HEIGHT ARRAY IN KM; length of height array
 C
 C    JF switches to turn off/on (.true./.false.) several options
 C
@@ -493,7 +492,13 @@ C*****************************************************************
      &           INVDIP_OLD,INVDIP_OLD_110,INVDIP_OLD_600,
      &           INVDPC_OLD
       DOUBLE PRECISION XLONGI,DPHOUR,DPF107D,IBPROB
+      INTEGER    NDIRECT, NLOGFILE
       CHARACTER  FILNAM*12
+      CHARACTER  FILPAT*256
+      CHARACTER(*)  DIRECT
+      CHARACTER(*) LOGFILE
+      INTEGER    NZKM
+      REAL       ZKM(NZKM)
 c-web-for webversion
 c      CHARACTER FILNAM*53
 
@@ -502,7 +507,7 @@ c      CHARACTER FILNAM*53
      &  elg(7),FF0N(988),XM0N(441),F2N(13,76,2),FM3N(9,49,2),
      &  INDAP(13),AMP(4),HXL(4),SCL(4),XSM(7),atii(7),MM(6),
      &  DTI(6),AHH(8),STTE(7),DTE(7),ATE(8),TEA(4),XNAR(2),
-     &  OUTF(20,1000),DION(7),osfbr(25),D_MSIS(9),T_MSIS(2),
+     &  OUTF(20,NZKM),DION(7),osfbr(25),D_MSIS(9),T_MSIS(2),
      &  IAPO(7),SWMI(25),ab_mlat(48),DAT(11,4),PLA(4),PLO(4),
      &  a01(2,2),teva(6),tiv(4),FM(59,25,4,11),atei(8),
      &  param(2),OARR(100),xlpl(4)
@@ -548,9 +553,8 @@ c set switches for NRLMSIS00
         do 6492 KI=1,25
 6492    SWMI(KI)=1.
 
-        nummax=1000
         DO 7397 KI=1,20
-        do 7397 kk=1,nummax
+        do 7397 kk=1,nzkm
 7397    OUTF(KI,kk)=-1.
 C
 C oarr(1:6,10,15,16,33,35,39,41,46) are used for inputs.
@@ -634,9 +638,7 @@ C Initialize D_MSIS(1) to avoid accidental activation of
 C user input for Tn-exospheric in calls to GTD7 (CIRA.FOR)
                 D_MSIS(1) = 0.0
         	endif
- 
-        numhei=int(abs(heiend-heibeg)/abs(heistp))+1
-        if(numhei.gt.nummax) numhei=nummax
+
 C
 C Code inserted to aleviate block data problem for PC version.
 C Thus avoiding DATA statement with parameters from COMMON block.
@@ -663,7 +665,7 @@ c-web- messages should be turned off with mess=jf(34)=.false.
         KONSOL=6
         if(.not.jf(12).and.mess) then
            konsol=11
-           open(11,file='messages.txt')
+           open(11,file=LOGFILE)
            endif
 c
 c selection of density, temperature and ion composition options ......
@@ -1050,7 +1052,7 @@ C
 C calculate center height for CGM computation
 C
 
-        height_center=(HEIBEG+HEIEND)/2.
+        height_center=(zkm(1)+zkm(nzkm))/2.
         
 
 C
@@ -1070,7 +1072,9 @@ C
         ENDIF
         CALL GEODIP(IYEAR,LATI,LONGI,MLAT,MLONG,JMAG)
 
-        if((iyear.ne.iyearo).or.(daynr.ne.idaynro)) CALL FELDCOF(RYEAR)
+        if((iyear.ne.iyearo).or.(daynr.ne.idaynro)) then
+         CALL FELDCOF(RYEAR,DIRECT)
+        endif
 
         if(jf(18)) then
           call igrf_dip(lati,longi,ryear,300.0,dec,dip,magbr,modip)
@@ -1388,9 +1392,13 @@ c ionospheric bubble probability (IBP) model (valid range:
 C 350-510km, LT: 18 to 6, -45 to +45 deg latitude)
 c         
          ibprob=-1.0
+c iri26py: stock IRI-2026 only resets IBPROB here, but OARR(92) is
+c set from XIBP, which (under the blanket SAVE) keeps its value from
+c a previous call whenever the IBP branch below is skipped.
+         xibp=-1.0
          if(.not.jf(38).or.abs(LATI).gt.45.0) goto 2356
          if(hour.lt.18.0.and.hour.gt.6.0) goto 2356
-           CALL IBPLOD
+           CALL IBPLOD(DIRECT)
            xlongi=dble(longi)
            dphour=dble(hour)
            dpf107d=dble(f107d)
@@ -1417,7 +1425,8 @@ C
 104         FORMAT('ccir',I2,'.asc')
 c-web-for webversion
 c104     FORMAT('/var/www/omniweb/cgi/vitmo/IRI/ccir',I2,'.asc')
-        OPEN(IUCCIR,FILE=FILNAM,STATUS='OLD',ERR=8448,
+        call dfp(DIRECT,FILNAM,FILPAT)
+        OPEN(IUCCIR,FILE=FILPAT,STATUS='OLD',ERR=8448,
      &          FORM='FORMATTED')
         READ(IUCCIR,4689) F2,FM3
 4689    FORMAT(1X,4E15.8)
@@ -1430,7 +1439,8 @@ C
 1144          FORMAT('ursi',I2,'.asc')
 c-web-for webversion
 c1144    FORMAT('/var/www/omniweb/cgi/vitmo/IRI/ursi',I2,'.asc')
-          OPEN(IUCCIR,FILE=FILNAM,STATUS='OLD',ERR=8448,
+          call dfp(DIRECT,FILNAM,FILPAT)
+          OPEN(IUCCIR,FILE=FILPAT,STATUS='OLD',ERR=8448,
      &         FORM='FORMATTED')
           READ(IUCCIR,4689) F2
           CLOSE(IUCCIR)
@@ -1448,7 +1458,8 @@ c first CCIR ..............................................
 c
 
         WRITE(FILNAM,104) NMONTH+10
-        OPEN(IUCCIR,FILE=FILNAM,STATUS='OLD',ERR=8448,
+        call dfp(DIRECT,FILNAM,FILPAT)
+        OPEN(IUCCIR,FILE=FILPAT,STATUS='OLD',ERR=8448,
      &          FORM='FORMATTED')
         READ(IUCCIR,4689) F2N,FM3N
         CLOSE(IUCCIR)
@@ -1458,7 +1469,8 @@ C then URSI if chosen .....................................
 C
         if(URSIF2) then
           WRITE(FILNAM,1144) NMONTH+10
-          OPEN(IUCCIR,FILE=FILNAM,STATUS='OLD',ERR=8448,
+          call dfp(DIRECT,FILNAM,FILPAT)
+          OPEN(IUCCIR,FILE=FILPAT,STATUS='OLD',ERR=8448,
      &         FORM='FORMATTED')
           READ(IUCCIR,4689) F2N
           CLOSE(IUCCIR)
@@ -1630,7 +1642,7 @@ c AMTB digisonde model
 
 c SHUBIN-COSMIC model
 	CALL model_hmF2(iday,month,hourut,modip,
-     &	   longi,F10781,HMF2)
+     &	   longi,F10781,HMF2,DIRECT)
 
 9917    nmono=nmonth
         MONTHO=MONTH
@@ -2321,7 +2333,7 @@ C
 141     xhmf1=hmf1
         IF(hmf1.le.0.0) HMF1=HZ
 
-        height=heibeg
+        height=zkm(1)
         kk=1
 	xinv=0.0
 
@@ -2506,9 +2518,11 @@ c
       OUTF(10,kk)=RCLUST*xnorm
       OUTF(11,kk)=RNX*xnorm
 
-7118  height=height+heistp
-      kk=kk+1
-      if(kk.le.numhei) goto 300
+7118  kk=kk+1
+      if(kk.le.nzkm) then
+         height=zkm(kk)
+         goto 300
+         endif
 
 C
 C END OF PARAMETER COMPUTATION LOOP 
@@ -2669,128 +2683,6 @@ c include only every second auroral boundary point (MLT=0,1,2..23)
 3330  CONTINUE
 
        icalls=icalls+1
-
+       if(konsol.eq.11) close(konsol)
        RETURN
        END
-c
-c
-        subroutine iri_web(jmag,jf,alati,along,iyyyy,mmdd,iut,dhour,
-     &    height,h_tec_min,h_tec_max,ivar,vbeg,vend,vstp,a,b)
-c-----------------------------------------------------------------------        
-c changes:
-c       11/16/99 jf(30) instead of jf(17)
-c       10/31/08 outf, a, b (100 -> 500)
-c
-c-----------------------------------------------------------------------        
-c input:   jmag,jf(50),alati,along,iyyyy,mmdd,iut,dhour (see IRI_SUB)          
-c          height  height in km
-c          h_tec_min lower boundary in km for TEC integral
-c          h_tec_max upper boundary in km (=0 TEC not computed) 
-c          ivar    parameter that is varying
-c                  =1      altitude
-c                  =2,3    latitude,longitude
-c                  =4,5,6  year,month,day
-c                  =7      day of year
-c                  =8      hour (UT or LT)
-c          vbeg,vend,vstp  variable range (begin,end,step)
-c output:  a(20,1000)      contains outf(20) output parameters for all 
-c                               maximaly 1000 variable steps 
-c          b(100,1000)     contains oar(100) output parameters for all 
-c                               maximaly 1000 variable steps 
-c
-c          numstp  number of steps; maximal 1000
-c-----------------------------------------------------------------------        
-        dimension   outf(20,1000),oar(100),oarr(100),a(20,1000)
-        dimension   xvar(8),b(100,1000)
-        logical     jf(50)
-
-        nummax=1000
-        numstp=int((vend-vbeg)/vstp)+1
-        if(numstp.gt.nummax) numstp=nummax
-
-        do 6249 i=1,100
-6249      oar(i)=b(i,1) 
-
-        if(MMDD.lt.0) then
-           IDOY=-MMDD
-           call MODA(1,iyyyy,MONTH,IDAY,IDOY,nrdaym)
-           MMDD=MONTH*100+IDAY
-        else
-           MONTH=MMDD/100
-           IDAY=MMDD-MONTH*100
-           call MODA(0,iyyyy,MONTH,IDAY,IDOY,nrdaym)
-        endif
-
-        if(ivar.eq.1) then
-            do 1249 i=1,100
-1249            oarr(i)=oar(i) 
-            xhour=dhour+iut*25.
-            call IRI_SUB(JF,JMAG,ALATI,ALONG,IYYYY,MMDD,
-     &                  XHOUR,VBEG,VEND,VSTP,a,OARR)
-            if(h_tec_max.gt.50.) then 
-               call IRITEC(ALATI,ALONG,jmag,jf,iyyyy,mmdd,
-     &           xhour,h_tec_min,h_tec_max,1.0,oarr,tecbo,tecto)
-               oarr(37) = tecbo + tecto
-               oarr(38) = tecto / oarr(37) * 100
-               endif
-            do 1111 i=1,100
-1111           b(i,1)=oarr(i)
-            return
-            endif
-
-        if(height.le.0.0) height=100
-        xvar(2)=alati
-        xvar(3)=along
-        xvar(4)=iyyyy*1.0
-        xvar(5)=month*1.0
-        xvar(6)=iday*1.0
-        xvar(7)=idoy
-        xvar(8)=dhour
-
-        xvar(ivar)=vbeg
-
-        alati=xvar(2)
-        along=xvar(3)
-        iyyyy=int(xvar(4))
-        if(ivar.eq.7) then
-           mmdd=-int(vbeg)
-        else
-           mmdd=int(xvar(5)*100+xvar(6))
-        endif
-        xhour=xvar(8)+iut*25.
-
-        do 1 i=1,numstp	
-
-          do 1349 iii=1,100
-1349        oarr(iii)=b(iii,i)
-
-          call IRI_SUB(JF,JMAG,ALATI,ALONG,IYYYY,MMDD,
-     &          XHOUR,HEIGHT,HEIGHT,1.,OUTF,OARR)
-          if(h_tec_max.gt.50.) then
-            call IRITEC(ALATI,ALONG,jmag,jf,iyyyy,mmdd,
-     &        xhour,h_tec_min,h_tec_max,1.0,oarr,tecbo,tecto)
-	    oarr(37) = tecbo + tecto
-            oarr(38) = tecto / oarr(37) * 100
-            endif
-			
-          do 2 ii=1,20
-2           a(ii,i)=outf(ii,1)
-          do 2222 ii=1,100
-2222        b(ii,i)=oarr(ii)
-
-          xvar(ivar)=xvar(ivar)+vstp
-
-          alati=xvar(2)
-          along=xvar(3)
-          iyyyy=int(xvar(4))
-          if(ivar.eq.7) then
-            mmdd=-int(xvar(7))
-          else
-            mmdd=int(xvar(5)*100+xvar(6))
-          endif
-          xhour=xvar(8)+iut*25.
-1       continue
-
-        return
-        end
-

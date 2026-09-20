@@ -689,8 +689,8 @@ C*****ENTRY POINT  FELDI  USED FOR L COMPUTATION
       END                                                               
 C
 C
-        SUBROUTINE FELDCOF(YEAR)
-c-----------------------------------------------------------------------        
+        SUBROUTINE FELDCOF(YEAR,DIR)
+c-----------------------------------------------------------------------
 C  DETERMINES COEFFICIENTS AND DIPOL MOMENT FROM IGRF MODELS
 C
 C       INPUT:  YEAR  DECIMAL YEAR FOR WHICH GEOMAGNETIC FIELD IS TO
@@ -710,8 +710,9 @@ C 10/05/2011 added COMMON/DIPOL/ for MLT computation in DPMTRX (IRIFUN)
 C 02/10/2015 update to IGRF-12 (2015) (###)
 C 03/05/2020 update to IGRF-13 (2020) (###)
 C 02/05/2025 update to IGRF-14 (2025) (###)
-c-----------------------------------------------------------------------        
-        CHARACTER*13    FILMOD, FIL1, FIL2           
+c-----------------------------------------------------------------------
+        CHARACTER(*) DIR
+        CHARACTER*13    FILMOD, FIL1, FIL2
 C ### FILMOD, DTEMOD array-size is number of IGRF maps
         DIMENSION       GH1(196),GH2(196),GHA(196),FILMOD(18),DTEMOD(18)
         DOUBLE PRECISION X,F0,F
@@ -750,9 +751,9 @@ C-- DETERMINE IGRF-YEARS FOR INPUT-YEAR
         DTE2 = DTEMOD(L+1) 
         FIL2 = FILMOD(L+1) 
 C-- GET IGRF COEFFICIENTS FOR THE BOUNDARY YEARS
-        CALL GETSHC (IU, FIL1, NMAX1, ERAD, GH1, IER)  
+        CALL GETSHC (IU, FIL1, NMAX1, ERAD, GH1, IER, DIR)
             IF (IER .NE. 0) STOP                           
-        CALL GETSHC (IU, FIL2, NMAX2, ERAD, GH2, IER)  
+        CALL GETSHC (IU, FIL2, NMAX2, ERAD, GH2, IER, DIR)
             IF (IER .NE. 0) STOP
 C-- DETERMINE IGRF COEFFICIENTS FOR YEAR
         IF (L .LE. NUMYE-1) THEN                        
@@ -798,7 +799,7 @@ C-- DETERMINE MAGNETIC DIPOL MOMENT AND COEFFIECIENTS G
         END
 C
 C
-        SUBROUTINE GETSHC (IU, FSPEC, NMAX, ERAD, GH, IER)                                                                                           
+        SUBROUTINE GETSHC (IU, FSPEC, NMAX, ERAD, GH, IER, DIR)                                                                                        
 C ===============================================================               
 C       Reads spherical harmonic coefficients from the specified     
 C       file into an array.                                          
@@ -817,7 +818,8 @@ C                                 = -2, records out of order
 C                                 = FORTRAN run-time error number    
 C ===============================================================               
                                                                                 
-        CHARACTER  FSPEC*(*), FOUT*80                                    
+        CHARACTER  FSPEC*(*), FNAM*80, FOUT*256
+        CHARACTER(*) DIR
         DIMENSION       GH(196)
         LOGICAL		mess 
         COMMON/iounit/konsol,mess        
@@ -828,11 +830,12 @@ C ---------------------------------------------------------------
 C       Open coefficient file. Read past first header record.        
 C       Read degree and order of model and Earth's radius.           
 C ---------------------------------------------------------------               
-        WRITE(FOUT,667) FSPEC
+        WRITE(FNAM,667) FSPEC
  667    FORMAT(A13)
 c-web-for webversion
 c 667    FORMAT('/var/www/omniweb/cgi/vitmo/IRI/',A13)
-        OPEN (IU, FILE=FOUT, STATUS='OLD', IOSTAT=IER, ERR=999)     
+        call dfp(DIR,FNAM,FOUT)
+        OPEN (IU, FILE=FOUT, STATUS='OLD', IOSTAT=IER, ERR=999)
         READ (IU, *, IOSTAT=IER, ERR=999)                            
         READ (IU, *, IOSTAT=IER, ERR=999) NMAX, ERAD, XMYEAR 
         nm=nmax*(nmax+2)                
